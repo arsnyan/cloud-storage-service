@@ -1,0 +1,54 @@
+services:
+  s3:
+    image: minio/minio:latest
+    container_name: cloud-storage-app-s3
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "minioadmin"
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio_data:/data
+    networks:
+      - cloud-storage-app-network
+
+  database:
+    image: postgres:17-alpine
+    container_name: cloud-storage-app-db
+    environment:
+      POSTGRES_DB: cloud-storage-app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - cloud-storage-app-network
+
+  backend:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    container_name: cloud-storage-app-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/cloud-storage-app
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      - database
+      - s3
+    networks:
+      - cloud-storage-app-network
+
+volumes:
+  postgres-data:
+
+networks:
+  cloud-storage-app-network:
+    driver: bridge
