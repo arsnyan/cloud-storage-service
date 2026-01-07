@@ -38,6 +38,7 @@ public class UserServiceImpl implements UserService {
 
         user.setRoles(Set.of(defaultRole));
 
+
         userRepository.save(user);
 
         return new UserRegisterResponseDto(dto.username());
