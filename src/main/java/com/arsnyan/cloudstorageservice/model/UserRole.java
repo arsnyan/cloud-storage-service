@@ -19,8 +19,8 @@ public class UserRole {
     private UserRoleId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @MapsId("username")
-    @JoinColumn(name = "username", foreignKey = @ForeignKey(name = "fk_role_username"))
+    @MapsId("userId")
+    @JoinColumn(name = "user_id", foreignKey = @ForeignKey(name = "fk_role_user_id"))
     private User user;
 
     @Override

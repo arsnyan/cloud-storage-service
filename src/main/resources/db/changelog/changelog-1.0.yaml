@@ -7,10 +7,16 @@ databaseChangeLog:
             tableName: users
             columns:
               - column:
+                  name: user_id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
                   name: username
                   type: varchar
                   constraints:
-                    primaryKey: true
+                    nullable: false
               - column:
                   name: password
                   type: varchar
@@ -40,6 +46,13 @@ databaseChangeLog:
                   defaultValue: "false"
                   constraints:
                     nullable: false
+        - createIndex:
+            columns:
+              - column:
+                  name: username
+                  type: gin
+            indexName: idx_user_user_id
+            tableName: users
 
         - createIndex:
             columns:
@@ -69,8 +82,8 @@ databaseChangeLog:
             tableName: roles
             columns:
               - column:
-                  name: username
-                  type: varchar
+                  name: user_id
+                  type: bigint
                   constraints:
                     nullable: false
               - column:
@@ -81,13 +94,14 @@ databaseChangeLog:
 
         - addForeignKeyConstraint:
             baseTableName: roles
-            baseColumnNames: username
-            constraintName: fk_role_username
+            baseColumnNames: user_id
+            constraintName: fk_role_user_id
             referencedTableName: users
-            referencedColumnNames: username
+            referencedColumnNames: user_id
             onDelete: cascade
             onUpdate: cascade
 
-        - addUniqueConstraint:
+        - addPrimaryKey:
             tableName: roles
-            columnNames: "username,role"
+            constraintName: pk_roles_user_id_role
+            columnNames: "user_id,role"

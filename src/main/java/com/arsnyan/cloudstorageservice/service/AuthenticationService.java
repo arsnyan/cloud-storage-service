@@ -1,7 +1,7 @@
 package com.arsnyan.cloudstorageservice.service;
 
-import com.arsnyan.cloudstorageservice.dto.UserRegisterRequestDto;
-import com.arsnyan.cloudstorageservice.dto.UserRegisterResponseDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterResponseDto;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.userdetails.UserDetails;

@@ -1,7 +1,7 @@
 package com.arsnyan.cloudstorageservice.service.impl;
 
-import com.arsnyan.cloudstorageservice.dto.UserRegisterRequestDto;
-import com.arsnyan.cloudstorageservice.dto.UserRegisterResponseDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterResponseDto;
 import com.arsnyan.cloudstorageservice.service.AuthenticationService;
 import com.arsnyan.cloudstorageservice.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;

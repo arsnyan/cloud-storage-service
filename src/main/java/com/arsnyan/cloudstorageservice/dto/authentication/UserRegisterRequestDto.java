@@ -1,9 +1,9 @@
-package com.arsnyan.cloudstorageservice.dto;
+package com.arsnyan.cloudstorageservice.dto.authentication;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record UserLoginRequestDto(
+public record UserRegisterRequestDto(
     @NotBlank
     @Size(min = 4, max = 24)
     String username,

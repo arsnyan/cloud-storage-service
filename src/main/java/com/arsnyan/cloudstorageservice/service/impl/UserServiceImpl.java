@@ -1,7 +1,7 @@
 package com.arsnyan.cloudstorageservice.service.impl;
 
-import com.arsnyan.cloudstorageservice.dto.UserRegisterRequestDto;
-import com.arsnyan.cloudstorageservice.dto.UserRegisterResponseDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterResponseDto;
 import com.arsnyan.cloudstorageservice.exception.UserAlreadyExistsException;
 import com.arsnyan.cloudstorageservice.model.User;
 import com.arsnyan.cloudstorageservice.model.UserRole;
@@ -33,7 +33,8 @@ public class UserServiceImpl implements UserService {
         user.setUsername(dto.username());
         user.setPassword(encryptedPassword);
 
-        var defaultRoleId = new UserRoleId(dto.username(), "DEFAULT");
+        var defaultRoleId = new UserRoleId();
+        defaultRoleId.setRole("DEFAULT");
         var defaultRole = new UserRole(defaultRoleId, user);
 
         user.setRoles(Set.of(defaultRole));

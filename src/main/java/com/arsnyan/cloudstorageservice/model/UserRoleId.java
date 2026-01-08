@@ -16,18 +16,18 @@ public class UserRoleId implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private String username;
+    private Long userId;
     private String role;
 
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         UserRoleId that = (UserRoleId) o;
-        return Objects.equals(username, that.username) && Objects.equals(role, that.role);
+        return Objects.equals(userId, that.userId) && Objects.equals(role, that.role);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(username, role);
+        return Objects.hash(userId, role);
     }
 }

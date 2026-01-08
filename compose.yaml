@@ -8,6 +8,11 @@ services:
       - redis-data:/data
     networks:
       - cloud-storage-app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   s3:
     image: minio/minio:latest
@@ -16,13 +21,18 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: "minioadmin"
-      MINIO_ROOT_PASSWORD: "minioadmin"
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     volumes:
       - ./minio_data:/data
     networks:
       - cloud-storage-app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   database:
     image: postgres:17-alpine
@@ -37,6 +47,11 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - cloud-storage-app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cloud-storage-app"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   backend:
     build:
@@ -47,18 +62,47 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+
       SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/cloud-storage-app
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+
       SECURITY_ALLOWED_ORIGINS:
+
+      MINIO_ENDPOINT_URL: http://s3:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_BUCKET_NAME: user-files
     depends_on:
-      - redis
-      - database
-      - s3
+      redis:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
     networks:
       - cloud-storage-app-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    networks:
+      - cloud-storage-app-network
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres-data:

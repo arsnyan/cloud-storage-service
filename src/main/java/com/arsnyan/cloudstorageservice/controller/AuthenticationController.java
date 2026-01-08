@@ -1,15 +1,16 @@
 package com.arsnyan.cloudstorageservice.controller;
 
-import com.arsnyan.cloudstorageservice.dto.UserLoginRequestDto;
-import com.arsnyan.cloudstorageservice.dto.UserLoginResponseDto;
-import com.arsnyan.cloudstorageservice.dto.UserRegisterRequestDto;
-import com.arsnyan.cloudstorageservice.dto.UserRegisterResponseDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserLoginRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserLoginResponseDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterResponseDto;
 import com.arsnyan.cloudstorageservice.service.AuthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthenticationController {
     private final AuthenticationService authenticationService;
 
-    @PostMapping("/login")
+    @PostMapping("/sign-in")
     public ResponseEntity<@NonNull UserLoginResponseDto> login(
         @RequestBody @Valid UserLoginRequestDto dto,
         HttpServletRequest request,
@@ -34,14 +35,14 @@ public class AuthenticationController {
         return ResponseEntity.ok(new UserLoginResponseDto(dto.username()));
     }
 
-    @PostMapping("/register")
+    @PostMapping("/sign-up")
     public ResponseEntity<@NonNull UserRegisterResponseDto> register(
         @RequestBody @Valid UserRegisterRequestDto dto,
         HttpServletRequest request,
         HttpServletResponse response
     ) {
         var registeredUser = authenticationService.register(dto, request, response);
-        return ResponseEntity.ok(registeredUser);
+        return ResponseEntity.status(HttpStatus.CREATED).body(registeredUser);
     }
 
     @PostMapping("/logout")

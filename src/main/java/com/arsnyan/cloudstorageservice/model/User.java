@@ -13,6 +13,7 @@ import java.util.Set;
 @Table(
     name = "users",
     indexes = {
+        @Index(name = "idx_user_username", columnList = "username"),
         @Index(name = "idx_user_is_disabled", columnList = "is_disabled DESC"),
         @Index(name = "idx_user_is_expired", columnList = "is_expired DESC"),
         @Index(name = "idx_user_is_locked", columnList = "is_locked DESC")
@@ -24,6 +25,10 @@ import java.util.Set;
 @AllArgsConstructor
 public class User {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
+    private Long id;
+
     @Column(name = "username", unique = true, nullable = false, columnDefinition = "varchar")
     private String username;
 

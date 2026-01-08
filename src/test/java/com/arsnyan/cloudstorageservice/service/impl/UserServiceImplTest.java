@@ -1,6 +1,6 @@
 package com.arsnyan.cloudstorageservice.service.impl;
 
-import com.arsnyan.cloudstorageservice.dto.UserRegisterRequestDto;
+import com.arsnyan.cloudstorageservice.dto.authentication.UserRegisterRequestDto;
 import com.arsnyan.cloudstorageservice.exception.UserAlreadyExistsException;
 import com.arsnyan.cloudstorageservice.repository.UserRepository;
 import com.arsnyan.cloudstorageservice.service.UserService;
@@ -17,7 +17,6 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
 
 @Transactional
 @SpringBootTest
