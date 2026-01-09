@@ -50,6 +50,14 @@ public class User {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private Set<UserRole> roles;
 
+    @OneToMany(mappedBy = "owner", fetch = FetchType.LAZY)
+    private Set<FileEntity> files;
+
+    @PreRemove
+    public void preRemove() {
+        files.forEach(file -> file.setIsStale(true));
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;

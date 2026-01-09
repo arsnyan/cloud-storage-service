@@ -13,4 +13,6 @@ public interface UserRepository extends JpaRepository<@NonNull User, @NonNull Lo
 
     @Query("SELECT u.id FROM User u")
     Optional<Long> getUserIdByUsername(String username);
+
+    boolean existsByUsername(String username);
 }

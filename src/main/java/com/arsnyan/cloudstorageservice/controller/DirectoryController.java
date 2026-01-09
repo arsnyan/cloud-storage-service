@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,12 +19,13 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/directory")
 @RequiredArgsConstructor
+@Validated
 public class DirectoryController {
     private final FileStorageService fileStorageService;
 
     @GetMapping
     public ResponseEntity<@NonNull List<ResourceGetInfoResponseDto>> listObjects(
-        @RequestParam @Valid @ResourcePath String path,
+        @RequestParam(required = false) @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
         var result = fileStorageService.listAllObjectsForFolder(user.getUsername(), path);
@@ -32,9 +34,14 @@ public class DirectoryController {
 
     @PostMapping
     public ResponseEntity<@NonNull AddFolderResponseDto> addFolder(
-        @RequestParam @Valid @ResourcePath String path,
+        @RequestParam String path,
         @AuthenticationPrincipal UserDetails user
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(fileStorageService.makeFolder(user.getUsername(), path));
+        if (!path.endsWith("/")) {
+            path = path + "/";
+        }
+
+        var result = fileStorageService.makeFolder(user.getUsername(), path);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 }

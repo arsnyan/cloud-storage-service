@@ -3,34 +3,25 @@ package com.arsnyan.cloudstorageservice.service.impl;
 import com.arsnyan.cloudstorageservice.dto.AddFolderResponseDto;
 import com.arsnyan.cloudstorageservice.dto.resource.ResourceGetInfoResponseDto;
 import com.arsnyan.cloudstorageservice.exception.NoSuchEntityException;
+import com.arsnyan.cloudstorageservice.exception.ResourceAlreadyExistsException;
 import com.arsnyan.cloudstorageservice.exception.ServerErrorException;
+import com.arsnyan.cloudstorageservice.model.Resource;
 import com.arsnyan.cloudstorageservice.model.ResourceType;
+import com.arsnyan.cloudstorageservice.model.User;
+import com.arsnyan.cloudstorageservice.repository.ResourceRepository;
 import com.arsnyan.cloudstorageservice.repository.UserRepository;
 import com.arsnyan.cloudstorageservice.service.FileStorageService;
-import com.google.common.collect.Streams;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
-import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -38,403 +29,268 @@ import java.util.zip.ZipOutputStream;
 public class FileStorageServiceImpl implements FileStorageService {
     private final MinioClient minioClient;
     private final UserRepository userRepository;
-    private final ThreadPoolTaskExecutor threadPoolTaskExecutor;
+    private final ResourceRepository resourceRepository;
 
     @Value("${app.minio.root-bucket-name}")
     private String rootBucket;
 
     @Override
+    @Transactional(readOnly = true)
     public ResourceGetInfoResponseDto getDetailsForResource(String username, String path) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-        var fullPath = resolveKey(userFolder, path);
-
-        try {
-            var resourceType = getResourceType(path);
-            var resourceName = getResourceName(path);
-            var leadingPath = getLeadingPath(path);
-            long objectSize = 0;
-
-            if (resourceType == ResourceType.FILE) {
-                var response = minioClient.getObjectAttributes(GetObjectAttributesArgs.builder()
-                    .bucket(rootBucket)
-                    .object(fullPath)
-                    .objectAttributes(new String[] {"ObjectSize"})
-                    .build()
-                );
-                objectSize = response.result().objectSize();
-            }
-
-            return new ResourceGetInfoResponseDto(
-                leadingPath,
-                resourceName,
-                objectSize,
-                resourceType
-            );
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
+        var user = resolveUser(username);
+        var resource = resolvePathToResource(user, path);
+        return toDto(resource);
     }
 
     @Override
+    @Transactional
     public void deleteResource(String username, String path) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-        var fullPath = resolveKey(userFolder, path);
 
-        try {
-            removeObject(fullPath);
+    }
 
-            if (getResourceType(path) == ResourceType.DIRECTORY) {
-                var directoryContents = getDirectoryContents(userFolder, path);
-                for (var objectPath : directoryContents) {
-                    removeObject(objectPath);
-                }
-            }
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
+    @Override
+    public void deleteResourceById(UUID uuid) {
+
     }
 
     @Override
     public File produceFileForPath(String username, String path) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-
-        try {
-            var fileName = getResourceName(path);
-            var resourceType = getResourceType(path);
-
-            return switch (resourceType) {
-                case FILE -> {
-                    var tempFile = File.createTempFile("minio-", "-" + new File(fileName).getName());
-
-                    minioClient.downloadObject(DownloadObjectArgs.builder()
-                        .bucket(rootBucket)
-                        .object(resolveKey(userFolder, path))
-                        .filename(tempFile.getAbsolutePath())
-                        .build());
-
-                    yield tempFile;
-                }
-                case DIRECTORY -> {
-                    var nestedDirectoryContent = getDirectoryContents(userFolder, path);
-
-                    var tempDir = Files.createTempDirectory("minio-download-dir-");
-                    for (var contentPath : nestedDirectoryContent) {
-                        var relativePath = contentPath.substring(userFolder.length());
-                        var targetPath = tempDir.resolve(relativePath);
-
-                        Files.createDirectories(targetPath.getParent());
-
-                        minioClient.downloadObject(DownloadObjectArgs.builder()
-                                .bucket(rootBucket)
-                                .object(contentPath)
-                                .filename(targetPath.toString())
-                                .build());
-                    }
-
-                    var zipFile = File.createTempFile("minio-", ".zip");
-                    zipDirectory(tempDir, zipFile);
-                    deleteDirectoryRecursively(tempDir);
-
-                    yield zipFile;
-                }
-            };
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
+        return null;
     }
 
     @Override
     public ResourceGetInfoResponseDto moveResource(String username, String from, String to) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-
-        var sourceKey = resolveKey(userFolder, from);
-        var targetKey = resolveKey(userFolder, to);
-
-        try {
-            var resourceType = getResourceType(from);
-
-            switch (resourceType) {
-                case FILE -> {
-                    copyObject(sourceKey, targetKey);
-                    removeObject(sourceKey);
-                }
-                case DIRECTORY -> {
-                    var contents = getDirectoryContents(userFolder, from);
-
-                    for (var objectPath : contents) {
-                        var relativePath = objectPath.substring(sourceKey.length());
-                        var newObjectPath = targetKey + relativePath;
-
-                        copyObject(objectPath, newObjectPath);
-                        removeObject(objectPath);
-                    }
-                }
-            }
-
-            return getDetailsForResource(username, to);
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
+        return null;
     }
 
     @Override
     public List<ResourceGetInfoResponseDto> searchResources(String username, String query) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-
-        try {
-            // MinIO doesn't have a search function, so brute-forcing it is
-            var allObjects = getDirectoryContents(userFolder, query);
-            var filteredObjects = allObjects.stream().filter(obj -> obj.contains(query));
-
-            return filteredObjects.map(path -> {
-                var type = getResourceType(path);
-                long size = 0;
-
-                if (type == ResourceType.FILE) {
-                    try {
-                        size = getDetailsForResource(username, path).size();
-                    } catch (Exception ignored) {}
-                }
-
-                return new ResourceGetInfoResponseDto(
-                    getLeadingPath(path),
-                    getResourceName(path),
-                    size,
-                    type
-                );
-            }).toList();
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
+        return List.of();
     }
 
     @Override
     public List<ResourceGetInfoResponseDto> uploadResources(String username, String path, List<MultipartFile> files) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
+        return List.of();
+    }
 
-        try {
-            var snowballObjects = new ArrayList<SnowballObject>();
-            var responseDtos = new ArrayList<ResourceGetInfoResponseDto>();
+    @Override
+    @Transactional(readOnly = true)
+    public List<ResourceGetInfoResponseDto> listAllObjectsForFolder(String username, String path) {
+        var user = resolveUser(username);
 
-            var resolvedBasePath = resolveKey(userFolder, path);
+        List<Resource> children;
+        if (path == null || path.isEmpty()) {
+            children = resourceRepository.findByOwnerAndParentIsNull(user);
+        } else {
+            var parent = resolvePathToResource(user, path);
 
-            if (!resolvedBasePath.endsWith("/")) resolvedBasePath += "/";
-
-            for (MultipartFile file : files) {
-                var originalFileName = file.getOriginalFilename();
-                var resourceType = getResourceType(originalFileName);
-                var objectName = resolvedBasePath + originalFileName;
-
-                snowballObjects.add(new SnowballObject(
-                    objectName,
-                    file.getInputStream(),
-                    file.getSize(),
-                    ZonedDateTime.now()
-                ));
-
-                responseDtos.add(new ResourceGetInfoResponseDto(
-                    path,
-                    originalFileName,
-                    file.getSize(),
-                    resourceType
-                ));
+            if (parent.isFile()) {
+                throw new NoSuchEntityException("Path is not a directory");
             }
 
-            minioClient.uploadSnowballObjects(UploadSnowballObjectsArgs.builder()
-                    .bucket(rootBucket)
-                    .objects(snowballObjects)
-                    .build());
-
-            return responseDtos;
-        } catch (Exception e) {
-            throw makeServerException(e);
+            children = resourceRepository.findByOwnerAndParent(user, parent);
         }
-    }
 
-    @Override
-    public List<ResourceGetInfoResponseDto> listAllObjectsForFolder(String username, String path) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-
-        var contents = getDirectoryContents(userFolder, path, false);
-        return contents.stream().map(obj -> getDetailsForResource(username, obj)).toList();
-    }
-
-    @Override
-    public AddFolderResponseDto makeFolder(String username, String path) {
-        var userId = getUserIdByUsername(username);
-        var userFolder = getUserFolder(userId);
-
-        try {
-            minioClient.putObject(PutObjectArgs.builder()
-                    .bucket(rootBucket)
-                    .object(resolveKey(userFolder, path))
-                    .stream(new ByteArrayInputStream(new byte[] {}), 0, -1)
-                    .build());
-
-            return new AddFolderResponseDto(
-                getLeadingPath(path),
-                getResourceName(path),
-                ResourceType.DIRECTORY
-            );
-        } catch (Exception e) {
-            throw makeServerException(e);
-        }
-    }
-
-    private Long getUserIdByUsername(String username) {
-        return userRepository.getUserIdByUsername(username)
-            .orElseThrow(() -> new NoSuchEntityException("User %s does not exist".formatted(username)));
-    }
-
-    private String getUserFolder(Long userId) {
-        return "user-%s-files/".formatted(userId);
-    }
-
-    private List<String> getDirectoryContents(String userFolder, String path) {
-        return getDirectoryContents(userFolder, path, true);
-    }
-
-    private List<String> getDirectoryContents(String userFolder, String path, boolean recursive) {
-        return Streams.stream(minioClient.listObjects(ListObjectsArgs.builder()
-                    .bucket(rootBucket)
-                    .prefix(userFolder + path)
-                    .recursive(recursive)
-                    .build()
-            ).iterator())
-            .filter(Objects::nonNull)
-            .map(objectItem -> {
-                try {
-                    return objectItem.get().objectName();
-                } catch (Exception e) {
-                    throw makeServerException(e);
-                }
-            })
+        return children.stream()
+            .map(this::toDto)
             .toList();
     }
 
-    private ResourceType getResourceType(String path) {
-        if (path != null && path.endsWith("/")) {
-            return ResourceType.DIRECTORY;
+    @Override
+    @Transactional
+    public AddFolderResponseDto makeFolder(String username, String path) {
+        var user = resolveUser(username);
+        var name = extractName(path);
+        var parentPath = extractParentPath(path);
+
+        var parent = resolveParentPath(user, parentPath);
+
+        boolean exists;
+        if (parent == null) {
+            exists = resourceRepository.existsByOwnerAndParentIsNullAndNameAndType(
+                user, name, ResourceType.DIRECTORY
+            );
+        } else {
+            exists = resourceRepository.existsByOwnerAndParentAndNameAndType(
+                user, parent, name, ResourceType.DIRECTORY
+            );
         }
-        return ResourceType.FILE;
+
+        if (exists) {
+            throw ResourceAlreadyExistsException.forPath(path);
+        }
+
+        var directory = Resource.directory(name, user, parent);
+        directory = resourceRepository.save(directory);
+
+        log.info("Created directory: {} for user: {}", path, username);
+
+        return new AddFolderResponseDto(parentPath, name, ResourceType.DIRECTORY);
     }
 
-    private String getResourceName(String path) {
-        if (path == null || path.isEmpty()) return "";
-
-        int endIndex = path.length();
-        if (path.endsWith("/")) {
-            endIndex--;
+    @Override
+    @Transactional
+    public Resource ensureDirectoryPath(User user, String directoryPath) {
+        if (directoryPath == null || directoryPath.isEmpty()) {
+            return null;
         }
 
-        int lastSlash = path.lastIndexOf('/', endIndex - 1);
-        if (lastSlash == -1) {
-            return path;
+        var segments = splitPathIntoSegments(directoryPath);
+        Resource current = null;
+
+        for (var segment : segments) {
+            Optional<Resource> existing;
+            if (current == null) {
+                existing = resourceRepository.findByOwnerAndParentIsNullAndNameAndType(
+                    user, segment, ResourceType.DIRECTORY
+                );
+            } else {
+                existing = resourceRepository.findByOwnerAndParentAndNameAndType(
+                    user, current, segment, ResourceType.DIRECTORY
+                );
+            }
+
+            if (existing.isPresent()) {
+                current = existing.get();
+            } else {
+                var newDir = Resource.directory(segment, user, current);
+                current = resourceRepository.save(newDir);
+                log.debug("Created intermediate directory: {} for user: {}", segment, user.getUsername());
+            }
         }
-        return path.substring(lastSlash + 1);
+
+        return current;
     }
 
-    private String getLeadingPath(String path) {
-        int endIndex = path.length();
-        if (path.endsWith("/")) {
-            endIndex--;
+    private List<String> splitPathIntoSegments(String path) {
+        if (path == null || path.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        int lastSlash = path.lastIndexOf('/', endIndex - 1);
-        if (lastSlash == -1) {
+        return Arrays.asList(path.split("/")).stream()
+            .filter(segment -> !segment.isEmpty())
+            .toList();
+    }
+
+    private boolean isDirectoryPath(String path) {
+        return path != null && path.endsWith("/");
+    }
+
+    private String extractName(String path) {
+        var segments = splitPathIntoSegments(path);
+        if (segments.isEmpty()) {
             return "";
         }
-        return path.substring(0, lastSlash + 1);
+        return segments.getLast();
     }
 
-    private void removeObject(String path) {
-        try {
-            minioClient.removeObject(RemoveObjectArgs.builder()
-                .bucket(rootBucket)
-                .object(path)
-                .build());
-        } catch (Exception e) {
-            throw makeServerException(e);
+    private String extractParentPath(String path) {
+        var segments = splitPathIntoSegments(path);
+        if (segments.size() <= 1) {
+            return "";
         }
-    }
 
-    private void copyObject(String source, String target) {
-        try {
-            minioClient.copyObject(CopyObjectArgs.builder()
-                    .bucket(rootBucket)
-                    .object(target)
-                    .source(CopySource.builder()
-                        .bucket(rootBucket)
-                        .object(source)
-                        .build())
-                .build());
-        } catch (Exception e) {
-            throw makeServerException(e);
+        var parentPath = new StringBuilder();
+        for (int i = 0; i < segments.size() - 1; i++) {
+            parentPath.append(segments.get(i)).append("/");
         }
+        return parentPath.toString();
     }
 
-    private ServerErrorException makeServerException(Exception e) {
-        log.error(e.getMessage(), e);
-        if (e instanceof ErrorResponseException) {
-            if (((ErrorResponseException) e).errorResponse().code().equals("NoSuchKey")) {
-                throw new NoSuchEntityException(e.getMessage());
+    private User resolveUser(String username) {
+        return userRepository.getUserByUsername(username)
+            .orElseThrow(() -> new NoSuchEntityException("User not found: " + username));
+    }
+
+    private Resource resolvePathToResource(User user, String path) {
+        var segments = splitPathIntoSegments(path);
+        if (sections.isEmpty()) {
+            throw new NoSuchEntityException("Cannot resolve empty path. Use listRootContents for root listing");
+        }
+
+        boolean isDirectory = isDirectoryPath(path);
+        Resource current;
+
+        for (int i = 0; i < segments.size(); i++) {
+            var segment = segments.get(i);
+            boolean isLastSegment = (i == segments.size() - 1);
+
+            var targetType = isLastSegment && !isDirectory
+                ? ResourceType.FILE
+                : ResourceType.DIRECTORY;
+
+            Optional<Resource> found;
+            if (current == null) {
+                found = resourceRepository.findByOwnerAndParentIsNullAndNameAndType(
+                    user, segment, targetType
+                );
+            } else {
+                found = resourceRepository.findByOwnerAndParentAndNameAndType(
+                    user, current, segment, targetType
+                );
             }
+
+            current = found.orElseThrow(() -> new NoSuchEntityException("Resource not found: " + path));
         }
-        return new ServerErrorException("MinioClient resulted with error:", e);
+
+        return current;
     }
 
-    private void zipDirectory(Path sourceDir, File zipFile) throws IOException {
-        try (var zos = new ZipOutputStream(new FileOutputStream(zipFile));
-             var stream = Files.walk(sourceDir)) {
-
-            stream
-                .filter(path -> !Files.isDirectory(path))
-                .forEach(path -> {
-                    try {
-                        var zipEntryName = sourceDir.relativize(path).toString();
-                        var zipEntry = new ZipEntry(zipEntryName);
-
-                        zos.putNextEntry(zipEntry);
-                        Files.copy(path, zos);
-                        zos.closeEntry();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+    private Resource resolveParentPathToResource(User user, String parentPath) {
+        if (parentPath == null || parentPath.isEmpty()) {
+            return null;
         }
+
+        if (!parentPath.endsWith("/")) {
+            parentPath = parentPath + "/";
+        }
+
+        return resolvePathToResource(user, parentPath);
     }
 
-    private void deleteDirectoryRecursively(Path path) {
-        threadPoolTaskExecutor.execute(() -> {
-            try (var walk = Files.walk(path)) {
-                walk.sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
-            } catch (Exception e) {
-                log.error("Error while trying to delete files from temp directory: {}", e.getMessage());
-            }
-        });
+    private ResourceGetInfoResponseDto toDto(Resource resource) {
+        var parentPath = computeParentPath(resource);
+
+        return new ResourceGetInfoResponseDto(
+            parentPath,
+            resource.getName(),
+            resource.getSize(),
+            resource.getType()
+        );
     }
 
-    private String resolveKey(String userFolder, String path) {
-        // Remove leading slash if present to avoid double slashes (e.g. /user-1 vs user-1)
-        if (path.startsWith("/")) {
-            path = path.substring(1);
+    private String computeParentPath(Resource resource) {
+        var parentNames = new ArrayList<String>();
+        var current = resource.getParent();
+
+        while (current != null) {
+            parentNames.add(current.getName());
+            current = current.getParent();
         }
 
-        // If the path already starts with the user folder, return it as is
-        if (path.startsWith(userFolder)) {
-            return path;
+        Collections.reverse(parentNames);
+
+        if (parentNames.isEmpty()) {
+            return "";
         }
 
-        // Otherwise, prepend the user folder
-        return userFolder + path;
+        return String.join("/", parentNames) + "/";
+    }
+
+    private String computeFileName(Resource resource) {
+        var parentPath = computeParentPath(resource);
+        var suffix = resource.isDirectory() ? "/" : "";
+        return parentPath + resource.getName() + suffix;
     }
 }
+
+
+//private ServerErrorException makeServerException(Exception e) {
+//    log.error(e.getMessage(), e);
+//    if (e instanceof ErrorResponseException) {
+//        if (((ErrorResponseException) e).errorResponse().code().equals("NoSuchKey")) {
+//            throw new NoSuchEntityException(e.getMessage());
+//        }
+//    }
+//    return new ServerErrorException("MinioClient resulted with error:", e);
+//}

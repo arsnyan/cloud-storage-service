@@ -4,6 +4,7 @@ import com.arsnyan.cloudstorageservice.dto.resource.ResourceGetInfoResponseDto;
 import com.arsnyan.cloudstorageservice.service.FileStorageService;
 import com.arsnyan.cloudstorageservice.validation.ResourcePath;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.FileSystemResource;
@@ -11,6 +12,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -20,6 +22,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/resource")
 @RequiredArgsConstructor
+@Validated
 public class ResourceController {
     private final FileStorageService fileStorageService;
 
@@ -28,8 +31,8 @@ public class ResourceController {
         @RequestParam @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        return ResponseEntity.ok(fileStorageService.getDetailsForResource(username, path));
+        var result = fileStorageService.getDetailsForResource(user.getUsername(), path);
+        return ResponseEntity.ok(result);
     }
 
     @DeleteMapping
@@ -37,9 +40,7 @@ public class ResourceController {
         @RequestParam @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        fileStorageService.deleteResource(username, path);
-
+        fileStorageService.deleteResource(user.getUsername(), path);
         return ResponseEntity.noContent().build();
     }
 
@@ -48,18 +49,19 @@ public class ResourceController {
         @RequestParam @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        File producedFile = fileStorageService.produceFileForPath(username, path);
+        var producedFile = fileStorageService.produceFileForPath(user.getUsername(), path);
         var fileResource = new FileSystemResource(producedFile);
 
+        var filename = producedFile.getName();
         var contentDisposition = ContentDisposition
             .attachment()
-            .name(fileResource.getFilename())
+            .name(filename)
             .build();
 
         var headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         headers.setContentDisposition(contentDisposition);
+        headers.setContentLength(producedFile.length());
 
         return ResponseEntity
             .ok()
@@ -73,18 +75,16 @@ public class ResourceController {
         @RequestParam @Valid @ResourcePath String to,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        var result = fileStorageService.moveResource(username, from, to);
+        var result = fileStorageService.moveResource(user.getUsername(), from, to);
         return ResponseEntity.ok(result);
     }
 
     @GetMapping("/search")
     public ResponseEntity<@NonNull List<ResourceGetInfoResponseDto>> searchResource(
-        @RequestParam String query,
+        @RequestParam @NotBlank(message = "Search query must not be empty") String query,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        var searchResults = fileStorageService.searchResources(username, query);
+        var searchResults = fileStorageService.searchResources(user.getUsername(), query);
         return ResponseEntity.ok(searchResults);
     }
 
@@ -94,8 +94,7 @@ public class ResourceController {
         @RequestParam("object") List<MultipartFile> files,
         @AuthenticationPrincipal UserDetails user
     ) {
-        var username = user.getUsername();
-        var result = fileStorageService.uploadResources(username, path, files);
+        var result = fileStorageService.uploadResources(user.getUsername(), path, files);
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 }
