@@ -1,0 +1,107 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0
+      author: admin
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: user_id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: username
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: password
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_disabled
+                  type: bool
+                  defaultValue: "false"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_expired
+                  type: bool
+                  defaultValue: "false"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: credentials_expired
+                  type: bool
+                  defaultValue: "false"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_locked
+                  type: bool
+                  defaultValue: "false"
+                  constraints:
+                    nullable: false
+        - createIndex:
+            columns:
+              - column:
+                  name: username
+                  type: gin
+            indexName: idx_user_user_id
+            tableName: users
+
+        - createIndex:
+            columns:
+              - column:
+                  descending: true
+                  name: is_disabled
+            indexName: idx_user_is_disabled
+            tableName: users
+
+        - createIndex:
+            columns:
+              - column:
+                  descending: true
+                  name: is_expired
+            indexName: idx_user_is_expired
+            tableName: users
+
+        - createIndex:
+            columns:
+              - column:
+                  descending: true
+                  name: is_locked
+            indexName: idx_user_is_locked
+            tableName: users
+
+        - createTable:
+            tableName: roles
+            columns:
+              - column:
+                  name: user_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: varchar
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: roles
+            baseColumnNames: user_id
+            constraintName: fk_role_user_id
+            referencedTableName: users
+            referencedColumnNames: user_id
+            onDelete: cascade
+            onUpdate: cascade
+
+        - addPrimaryKey:
+            tableName: roles
+            constraintName: pk_roles_user_id_role
+            columnNames: "user_id,role"

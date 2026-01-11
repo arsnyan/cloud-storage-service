@@ -1,0 +1,47 @@
+package com.arsnyan.cloudstorageservice.controller;
+
+import com.arsnyan.cloudstorageservice.dto.resource.AddFolderResponseDto;
+import com.arsnyan.cloudstorageservice.dto.resource.ResourceGetInfoResponseDto;
+import com.arsnyan.cloudstorageservice.service.FileStorageService;
+import com.arsnyan.cloudstorageservice.validation.ResourcePath;
+import jakarta.validation.Valid;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/directory")
+@RequiredArgsConstructor
+@Validated
+public class DirectoryController {
+    private final FileStorageService fileStorageService;
+
+    @GetMapping
+    public ResponseEntity<@NonNull List<ResourceGetInfoResponseDto>> listObjects(
+        @RequestParam(required = false) @Valid @ResourcePath String path,
+        @AuthenticationPrincipal UserDetails user
+    ) {
+        var result = fileStorageService.listFolderContents(user.getUsername(), path);
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping
+    public ResponseEntity<@NonNull AddFolderResponseDto> addFolder(
+        @RequestParam String path,
+        @AuthenticationPrincipal UserDetails user
+    ) {
+        if (!path.endsWith("/")) {
+            path = path + "/";
+        }
+
+        var result = fileStorageService.createFolder(user.getUsername(), path);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+}
