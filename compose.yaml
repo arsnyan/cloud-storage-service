@@ -94,8 +94,9 @@ services:
 
   frontend:
     build:
-      context: frontend
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: ./Dockerfile
+    container_name: cloud-storage-app-frontend
     ports:
       - "80:80"
     networks:
