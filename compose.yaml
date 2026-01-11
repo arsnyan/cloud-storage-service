@@ -55,8 +55,8 @@ services:
 
   backend:
     build:
-      context: ./
-      dockerfile: ./backend/Dockerfile
+      context: ./backend
+      dockerfile: ./Dockerfile
     container_name: cloud-storage-app-backend
     ports:
       - "8080:8080"
@@ -111,4 +111,3 @@ volumes:
 
 networks:
   cloud-storage-app-network:
-    driver: bridge
