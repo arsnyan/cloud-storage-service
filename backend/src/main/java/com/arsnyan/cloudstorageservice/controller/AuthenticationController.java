@@ -45,7 +45,7 @@ public class AuthenticationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(registeredUser);
     }
 
-    @PostMapping("/logout")
+    @PostMapping("/sign-out")
     public ResponseEntity<@NonNull Void> logout(@AuthenticationPrincipal UserDetails user, HttpServletRequest request) {
         authenticationService.logout(user, request);
         return ResponseEntity.noContent().build();
