@@ -5,8 +5,6 @@ plugins {
     id 'org.springdoc.openapi-gradle-plugin' version '1.9.0'
 }
 
-group = 'com.arsnyan'
-version = '0.0.1-SNAPSHOT'
 description = 'backend'
 
 java {
@@ -48,6 +46,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation "org.testcontainers:testcontainers-minio"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

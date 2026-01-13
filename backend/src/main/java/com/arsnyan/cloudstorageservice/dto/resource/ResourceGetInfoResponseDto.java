@@ -8,7 +8,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record ResourceGetInfoResponseDto(
     String path,
     String name,
-    @JsonProperty()
     Long size,
     ResourceType type
 ) {}

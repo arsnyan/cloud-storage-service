@@ -97,7 +97,7 @@ public class FileStorageServiceImpl implements FileStorageService {
             var relativePath = objectName.replaceFirst(resolvedPathFrom, "");
             var finalPath = resolvedPathTo + relativePath;
 
-            if (s3Client.isPathAvailable(finalPath)) {
+            if (s3Client.isPathUnavailable(finalPath)) {
                 s3Client.copyObject(item, finalPath);
                 s3Client.removeObject(objectName);
             } else {
@@ -142,7 +142,7 @@ public class FileStorageServiceImpl implements FileStorageService {
     public AddFolderResponseDto createFolder(String username, String path) {
         var resolvedPath = resolvePath(getUserId(username), path);
 
-        if (s3Client.isPathAvailable(resolvedPath)) {
+        if (s3Client.isPathUnavailable(resolvedPath)) {
             s3Client.makeFolderInS3(resolvedPath);
         } else {
             throw new EntityAlreadyExistsException("Object %s already exists".formatted(resolvedPath));

@@ -108,7 +108,7 @@ public class MinioS3Client implements S3Client {
         }
     }
 
-    public boolean isPathAvailable(String path) {
+    public boolean isPathUnavailable(String path) {
         try {
             minioClient.statObject(
                 StatObjectArgs.builder()
