@@ -21,7 +21,7 @@ public interface S3Client {
 
     StatObjectResponse getStatObject(String path);
 
-    boolean isPathAvailable(String path);
+    boolean isPathUnavailable(String path);
 
     void makeFolderInS3(String path);
 }

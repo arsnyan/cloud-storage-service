@@ -4,6 +4,8 @@ import com.arsnyan.cloudstorageservice.validation.ResourcePath;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import java.net.URI;
 
@@ -19,7 +21,7 @@ public class URIPathConstraintValidator implements ConstraintValidator<ResourceP
         String normalized = value.trim();
 
         // must be a relative path
-        if (normalized.startsWith("/")) {
+        if (normalized.startsWith("/") || normalized.contains("//")) {
             return false;
         }
 
@@ -28,9 +30,17 @@ public class URIPathConstraintValidator implements ConstraintValidator<ResourceP
             return false;
         }
 
-        // basic URI syntax check
+        // basic URI syntax check - encode path segments to handle spaces and special characters
         try {
-            URI uri = URI.create(normalized);
+            String[] segments = normalized.split("/", -1);
+            StringBuilder encodedPath = new StringBuilder();
+            for (int i = 0; i < segments.length; i++) {
+                if (i > 0) {
+                    encodedPath.append("/");
+                }
+                encodedPath.append(URLEncoder.encode(segments[i], StandardCharsets.UTF_8));
+            }
+            URI uri = URI.create(encodedPath.toString());
             return uri.getPath() != null && !uri.getPath().isEmpty();
         } catch (IllegalArgumentException ex) {
             return false;
