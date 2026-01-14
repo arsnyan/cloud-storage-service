@@ -6,7 +6,6 @@ import com.arsnyan.cloudstorageservice.dto.resource.ResourceGetInfoResponseDto;
 import com.arsnyan.cloudstorageservice.exception.EntityAlreadyExistsException;
 import com.arsnyan.cloudstorageservice.exception.MinioWrappedException;
 import com.arsnyan.cloudstorageservice.exception.NoSuchEntityException;
-import com.arsnyan.cloudstorageservice.exception.ServerErrorException;
 import com.arsnyan.cloudstorageservice.mapper.ResourceMapper;
 import com.arsnyan.cloudstorageservice.model.ResourceType;
 import com.arsnyan.cloudstorageservice.repository.UserRepository;
@@ -17,12 +16,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import java.io.IOException;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
+import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -51,14 +49,34 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public void deleteResource(String username, String path) {
-        var resolvedPath = resolvePath(getUserId(username), path);
+        var userId = getUserId(username);
+        var resolvedPath = resolvePath(userId, path);
+        var userRootPath = resolvePath(userId, "");
 
         if (!path.endsWith("/")) {
             s3Client.removeObject(resolvedPath);
+
+            var parentPath = getParentPath(path);
+            if (parentPath.length() > userRootPath.length()) {
+                preserveParentFolder(username, parentPath);
+            }
         } else {
             var minioResults = s3Client.listObjects(resolvedPath, true);
             var resourceItems = mapResultsToResourceObjects(minioResults);
             resourceItems.forEach(item -> s3Client.removeObject(item.name()));
+        }
+    }
+
+    private void preserveParentFolder(String username, String parentPath) {
+        if (!parentPath.isEmpty() && !parentPath.equals(resolvePath(getUserId(username), ""))) {
+            var remainingItems = s3Client.listObjects(parentPath, false);
+            var hasContents = Streams.stream(remainingItems)
+                .map(ResourceMapper::mapRawObjectToItem)
+                .anyMatch(item -> !item.objectName().equals(parentPath));
+
+            if (!hasContents) {
+                s3Client.ensureFolderPlaceholderExists(parentPath);
+            }
         }
     }
 
@@ -69,9 +87,12 @@ public class FileStorageServiceImpl implements FileStorageService {
 
         if (!path.endsWith("/")) {
             var objectStats = s3Client.getStatObject(resolvedPath);
+            if (objectStats == null) {
+                throw new NoSuchEntityException("Resource not found");
+            }
+
             var stream = s3Client.getObject(resolvedPath);
 
-            assert objectStats != null;
             return new FileDownloadResponseDto(
                 stream,
                 filename,
@@ -85,25 +106,54 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public ResourceGetInfoResponseDto moveResource(String username, String from, String to) {
-        var resolvedPathFrom = resolvePath(getUserId(username), from);
-        var resolvedPathTo = resolvePath(getUserId(username), to);
+        var userId = getUserId(username);
+        var resolvedPathFrom = resolvePath(userId, from);
+        var resolvedPathTo = resolvePath(userId, to);
+        var sourceParentPath = getParentPath(resolvedPathFrom);
+        var userRootPath = resolvePath(userId, from);
 
         var nestedObjects = Streams.stream(s3Client.listObjects(resolvedPathFrom, true))
             .map(ResourceMapper::mapRawObjectToItem)
             .toList();
 
+        if (nestedObjects.isEmpty()) {
+            throw new NoSuchEntityException("Source resource not found %s".formatted(from));
+        }
+
+        var processedFolders = new HashSet<String>();
         for (var item : nestedObjects) {
             var objectName = item.objectName();
-            var relativePath = objectName.replaceFirst(resolvedPathFrom, "");
+            var relativePath = objectName.replaceFirst(Pattern.quote(resolvedPathFrom), "");
             var finalPath = resolvedPathTo + relativePath;
 
-            if (s3Client.isPathUnavailable(finalPath)) {
-                s3Client.copyObject(item, finalPath);
-                s3Client.removeObject(objectName);
+            if (finalPath.endsWith("/")) {
+                if (s3Client.hasNamingConflict(finalPath)) {
+                    throw new EntityAlreadyExistsException("File already exists");
+                }
+                s3Client.ensureFolderPlaceholderExists(finalPath);
+                processedFolders.add(finalPath);
             } else {
-                log.error("Failed to copy object {} to {}", item, finalPath);
-                throw new EntityAlreadyExistsException("Object %s already exists".formatted(finalPath));
+                if (s3Client.isPathAvailable(finalPath)) {
+                    throw new EntityAlreadyExistsException("Destination already exists");
+                }
+
+                var parent = getParentPath(finalPath);
+
+                while (parent.length() > userRootPath.length() && processedFolders.add(parent)) {
+                    if (s3Client.hasNamingConflict(parent)) {
+                        throw new EntityAlreadyExistsException("File already exists, cannot create parent folder");
+                    }
+                    s3Client.ensureFolderPlaceholderExists(parent);
+                    parent = getParentPath(parent);
+                }
             }
+
+            s3Client.copyObject(item, finalPath);
+            s3Client.removeObject(objectName);
+        }
+
+        if (sourceParentPath.length() > userRootPath.length()) {
+            preserveParentFolder(username, sourceParentPath);
         }
 
         return getResourceInfo(username, to);
@@ -111,7 +161,7 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public List<ResourceGetInfoResponseDto> searchResources(String username, String query) {
-        var allUserResources = listObjectsAsDto(s3Client.listObjects("", true), "");
+        var allUserResources = listObjectsAsDto(s3Client.listObjects(resolvePath(getUserId(username), ""), true), "");
 
         return allUserResources.stream()
             .filter(object -> object.name().contains(query))
@@ -121,8 +171,37 @@ public class FileStorageServiceImpl implements FileStorageService {
     @Override
     public List<ResourceGetInfoResponseDto> uploadResources(String username, String path, List<MultipartFile> files) {
         try {
-            var snowballObjects = mapToSnowballObjects(getUserId(username), path, files);
+            var userId = getUserId(username);
 
+            for (MultipartFile file : files) {
+                var filename = file.getOriginalFilename();
+                if (filename == null) continue;
+
+                var filePath = resolvePath(userId, path + filename);
+                if (s3Client.isPathAvailable(filePath)) {
+                    throw new EntityAlreadyExistsException("File %s already exists".formatted(filename));
+                }
+
+                if (filename.contains("/")) {
+                    var parts = filename.split("/");
+                    var folderBuilder = new StringBuilder(path);
+
+                    for (int i = 0; i < parts.length - 1; i++) {
+                        folderBuilder.append(parts[i]).append("/");
+                        var folderPath = resolvePath(userId, folderBuilder.toString());
+
+                        if (s3Client.hasNamingConflict(folderPath)) {
+                            var folderName = extractResourceName(folderPath);
+                            throw new EntityAlreadyExistsException("File %s already exists, cannot create folder"
+                                .formatted(folderName));
+                        }
+
+                        s3Client.ensureFolderPlaceholderExists(folderPath);
+                    }
+                }
+            }
+
+            var snowballObjects = mapToSnowballObjects(userId, path, files);
             s3Client.uploadSnowballObject(snowballObjects);
 
             return mapFilesToDto(path, files);
@@ -142,11 +221,11 @@ public class FileStorageServiceImpl implements FileStorageService {
     public AddFolderResponseDto createFolder(String username, String path) {
         var resolvedPath = resolvePath(getUserId(username), path);
 
-        if (s3Client.isPathUnavailable(resolvedPath)) {
-            s3Client.makeFolderInS3(resolvedPath);
-        } else {
-            throw new EntityAlreadyExistsException("Object %s already exists".formatted(resolvedPath));
+        if (s3Client.isPathAvailable(resolvedPath)) {
+            throw new EntityAlreadyExistsException("Object already exists");
         }
+
+        s3Client.makeFolderInS3(resolvedPath);
 
         return new AddFolderResponseDto(
             getParentPath(path),
@@ -161,46 +240,37 @@ public class FileStorageServiceImpl implements FileStorageService {
     }
 
     private FileDownloadResponseDto streamFolderAsZip(String username, String path, String resolvedPath) {
-        try {
-            var pipedInput = new PipedInputStream();
-            var pipedOutput = new PipedOutputStream(pipedInput);
+        var zipFilename = extractResourceName(path.substring(0, path.length() - 1)) + ".zip";
 
-            var zipFilename = extractResourceName(path.substring(0, path.length() - 1)) + ".zip";
+        StreamingResponseBody streamingBody = outputStream -> {
+            try (var zipStream = new ZipOutputStream(outputStream)) {
+                var items = Streams.stream(s3Client.listObjects(resolvedPath, true))
+                    .map(ResourceMapper::mapRawObjectToItem)
+                    .toList();
 
-            CompletableFuture.runAsync(() -> {
-                try (var zipStream = new ZipOutputStream(pipedOutput)) {
-                    var items = Streams.stream(s3Client.listObjects(resolvedPath, true))
-                        .map(ResourceMapper::mapRawObjectToItem)
-                        .toList();
+                for (var item : items) {
+                    if (item.isDir()) continue;
 
-                    for (var item : items) {
-                        if (item.isDir()) continue;
+                    var absoluteKey = item.objectName();
+                    var relativeZipPath = getRelativeZipPath(getUserId(username), absoluteKey);
 
-                        var absoluteKey = item.objectName();
-                        var relativeZipPath = getRelativeZipPath(getUserId(username), absoluteKey);
+                    var entry = new ZipEntry(relativeZipPath);
+                    zipStream.putNextEntry(entry);
 
-                        var entry = new ZipEntry(relativeZipPath);
-                        zipStream.putNextEntry(entry);
-
-                        try (var entryStream = s3Client.getObject(absoluteKey)) {
-                            entryStream.transferTo(zipStream);
-                        }
-                        zipStream.closeEntry();
+                    try (var entryStream = s3Client.getObject(absoluteKey)) {
+                        entryStream.transferTo(zipStream);
                     }
-                } catch (IOException e) {
-                    log.error(e.getMessage(), e);
-                    throw new ServerErrorException("Failed to create zip stream", e);
+                    zipStream.closeEntry();
                 }
-            });
+            }
+        };
 
-            return new FileDownloadResponseDto(
-                pipedInput,
-                zipFilename,
-                -1L,
-                "application/zip"
-            );
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return new FileDownloadResponseDto(
+            null,
+            zipFilename,
+            -1L,
+            "application/zip",
+            streamingBody
+        );
     }
 }

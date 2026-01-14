@@ -84,7 +84,7 @@ public class DirectoryController {
         )
     })
     public ResponseEntity<@NonNull AddFolderResponseDto> addFolder(
-        @RequestParam String path,
+        @RequestParam @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
         if (!path.endsWith("/")) {

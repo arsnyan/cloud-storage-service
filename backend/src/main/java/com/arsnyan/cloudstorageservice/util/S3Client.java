@@ -23,5 +23,11 @@ public interface S3Client {
 
     boolean isPathUnavailable(String path);
 
+    void ensureFolderPlaceholderExists(String folderPath);
+
+    boolean hasNamingConflict(String path);
+
+    boolean isPathAvailable(String path);
+
     void makeFolderInS3(String path);
 }

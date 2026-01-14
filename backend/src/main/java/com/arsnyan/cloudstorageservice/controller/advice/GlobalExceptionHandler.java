@@ -30,7 +30,10 @@ public class GlobalExceptionHandler {
             e.getMessage()
         );
 
-        detail.setProperty("Clause", e.getCause().getMessage());
+        var cause = e.getCause();
+        if (cause != null) {
+            detail.setProperty("Cause", cause.getMessage());
+        }
 
         return detail;
     }
@@ -53,9 +56,9 @@ public class GlobalExceptionHandler {
 
         detail.setTitle("Something went wrong on server side. Try again later or contact support.");
 
-        var clause = e.getCause();
-        if (clause != null) {
-            detail.setProperty("Cause", clause);
+        var cause = e.getCause();
+        if (cause != null) {
+            detail.setProperty("Cause", cause.getMessage());
         }
 
         return detail;

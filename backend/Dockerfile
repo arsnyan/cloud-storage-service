@@ -1,7 +1,7 @@
 FROM gradle:9.2.1-jdk21 AS build
 WORKDIR /app
 
-COPY build.gradle settings.gradle ./
+COPY build.gradle ./
 RUN gradle dependencies --no-daemon
 
 COPY src ./src

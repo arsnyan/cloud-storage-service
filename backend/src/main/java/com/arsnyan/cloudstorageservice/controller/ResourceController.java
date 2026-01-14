@@ -21,6 +21,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.List;
 
@@ -116,7 +117,7 @@ public class ResourceController {
             description = "Resource is not found for this user"
         )
     })
-    public ResponseEntity<@NonNull Resource> downloadResource(
+    public ResponseEntity<@NonNull StreamingResponseBody> downloadResource(
         @RequestParam @Valid @ResourcePath String path,
         @AuthenticationPrincipal UserDetails user
     ) {
@@ -133,12 +134,18 @@ public class ResourceController {
 
         if (fileData.contentLength() > 0) {
             headers.setContentLength(fileData.contentLength());
+            StreamingResponseBody stream = outputStream -> {
+                try (var input = fileData.stream()) {
+                    input.transferTo(outputStream);
+                }
+            };
+            return ResponseEntity.ok().headers(headers).body(stream);
         }
 
         return ResponseEntity
             .ok()
             .headers(headers)
-            .body(new InputStreamResource(fileData.stream()));
+            .body(fileData.streamingResponseBody());
     }
 
     @GetMapping("/move")

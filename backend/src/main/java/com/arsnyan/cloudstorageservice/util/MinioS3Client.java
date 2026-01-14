@@ -1,6 +1,7 @@
 package com.arsnyan.cloudstorageservice.util;
 
 import com.arsnyan.cloudstorageservice.exception.MinioWrappedException;
+import com.google.common.collect.Streams;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
 import io.minio.messages.Item;
@@ -140,8 +141,40 @@ public class MinioS3Client implements S3Client {
         );
     }
 
+    @Override
+    public void ensureFolderPlaceholderExists(String folderPath) {
+        if (!folderPath.startsWith("/")) {
+            folderPath = "/" + folderPath;
+        }
+        if (isPathUnavailable(folderPath)) {
+            makeFolderInS3(folderPath);
+        }
+    }
+
+    @Override
+    public boolean hasNamingConflict(String path) {
+        if (path.endsWith("/")) {
+            var filePath = path.substring(0, path.length() - 1);
+            return !isPathUnavailable(filePath);
+        } else {
+            var folderPath = path + "/";
+
+            if (!isPathUnavailable(folderPath)) {
+                return true;
+            }
+
+            var items = listObjects(folderPath, false);
+            return Streams.stream(items).findAny().isPresent();
+        }
+    }
+
+    @Override
+    public boolean isPathAvailable(String path) {
+        return !isPathUnavailable(path) || hasNamingConflict(path);
+    }
+
     private <Input, LambdaOutput> LambdaOutput invoke(Input path,
-                                           ThrowingFunction<@NonNull Input, @NonNull LambdaOutput> function) {
+                                                      ThrowingFunction<@NonNull Input, @NonNull LambdaOutput> function) {
         try {
             return function.apply(path);
         } catch (Exception e) {
